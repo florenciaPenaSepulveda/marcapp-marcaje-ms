@@ -29,7 +29,7 @@ export const configurarApp = (app: INestApplication): void => {
         : produccion
           ? false
           : ORIGENES_DE_DESARROLLO,
-    methods: ['GET', 'POST', 'PATCH'],
+    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
   });
   app.useGlobalPipes(
     new ValidationPipe({

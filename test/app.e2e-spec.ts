@@ -92,6 +92,18 @@ describe('Marcapp marcaje (e2e)', () => {
   });
 
   describe('acceso', () => {
+    it('permite desde el navegador los métodos que usa la aplicación, incluido DELETE', async () => {
+      const res = await http()
+        .options('/marcaje/admin/1')
+        .set('Origin', 'http://localhost:8081')
+        .set('Access-Control-Request-Method', 'DELETE')
+        .expect(204);
+      expect(res.headers['access-control-allow-methods']).toContain('DELETE');
+      expect(res.headers['access-control-allow-origin']).toBe(
+        'http://localhost:8081',
+      );
+    });
+
     it('responde en la raíz y envía cabeceras de seguridad', async () => {
       const res = await http().get('/').expect(200, { status: 'ok' });
       expect(res.headers['x-content-type-options']).toBe('nosniff');
