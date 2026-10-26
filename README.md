@@ -37,6 +37,8 @@ Completa en `.env` al menos `DB_PASSWORD` y `JWT_SECRET`, que debe ser **el mism
 | `APP_PORT` | Puerto HTTP | `3000` |
 | `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Conexión a PostgreSQL | `127.0.0.1`, `5432`, `postgres`, vacío, `marcajeDB` |
 | `JWT_SECRET` | Secreto compartido con el servicio de usuarios, obligatorio | — |
+| `USERS_SERVICE_URL` | URL del servicio de usuarios, que confirma cada sesión | `http://127.0.0.1:3001` |
+| `SESSION_CACHE_SECONDS` | Segundos que se recuerda una sesión confirmada (0 a 300; 0 la consulta siempre) | `15` |
 | `TIMEZONE` | Zona horaria con la que se definen los días de trabajo | `America/Santiago` |
 | `CORS_ORIGINS` | Orígenes permitidos separados por coma | ninguno en producción |
 | `RATE_LIMIT` | Solicitudes por minuto y por IP | `60` |
@@ -59,6 +61,7 @@ Todas las rutas, salvo el estado del servicio, exigen `Authorization: Bearer <to
 | `GET /marcaje/admin/today` | Admin | Estado de hoy de cada trabajador que marcó: `working` o `done`, con hora de entrada y salida |
 | `POST /marcaje/admin` | Admin | Crea un marcaje para un usuario en una fecha pasada |
 | `PATCH /marcaje/admin/:id` | Admin | Corrige la fecha y hora de un marcaje |
+| `DELETE /marcaje/admin/user/:userId` | Admin | Elimina todos los marcajes de un usuario (se usa al eliminar a un trabajador) y responde cuántos eran |
 | `DELETE /marcaje/admin/:id` | Admin | Elimina un marcaje |
 | `GET /statistics/daily` · `monthly` · `yearly` | Usuario | Horas por día, promedio mensual y anual; el admin puede filtrar con `?userId=` |
 | `GET /statistics/summary` | Usuario | Resumen de un período (`from`, `to` en `DD-MM-YYYY`; por defecto el mes en curso): días trabajados, horas totales, promedio por día, días sin salida y desglose por trabajador. El admin puede filtrar con `?userId=` |
@@ -74,7 +77,7 @@ Todas las rutas, salvo el estado del servicio, exigen `Authorization: Bearer <to
 ## Seguridad
 
 - Sin secretos en el código: la configuración sale del entorno y se valida al iniciar.
-- Los tokens se verifican localmente con HS256 y el secreto compartido; deben incluir `id` y `role`. El rol se toma del token, por lo que un cambio de rol rige cuando el usuario vuelve a iniciar sesión (los tokens duran 2 horas).
+- Cada solicitud se valida en dos pasos: la firma y la vigencia del token se verifican localmente con HS256, y luego `GET /auth/session` del servicio de usuarios confirma que la sesión no fue revocada (por ejemplo, tras cambiar la contraseña o eliminar al usuario) y entrega el rol vigente, que es el que se usa en lugar del que trae el token. La respuesta se recuerda `SESSION_CACHE_SECONDS` segundos, por lo que una revocación rige como máximo con ese retraso. Si el servicio de usuarios no responde, la API contesta 503 en lugar de aceptar el token sin confirmar.
 - Cada usuario solo accede a sus propios datos; las rutas de administración exigen el rol `admin`.
 - Cuerpos y parámetros se validan con lista blanca (un campo no declarado se rechaza con 400).
 - Límite de solicitudes por IP, cabeceras de seguridad con helmet y CORS restringido.
