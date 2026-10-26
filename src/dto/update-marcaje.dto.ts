@@ -1,9 +1,10 @@
 import * as validator from 'class-validator';
+import { FECHA_HORA } from './admin-marcaje.dto';
 
 export class UpdateMarcajeDto {
   @validator.IsString()
-  @validator.Matches(/^\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}$/, {
-    message: 'Date must be in the format DD-MM-YYYY hh:mm:ss',
+  @validator.Matches(FECHA_HORA, {
+    message: 'Date must be in the format DD-MM-YYYY HH:mm:ss',
   })
   date: string;
 }

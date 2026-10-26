@@ -2,6 +2,7 @@ import * as typeOrm from 'typeorm';
 import { MarcajeType } from '../enum/marcaje-type.enum';
 
 @typeOrm.Entity({ name: 'marcajes' })
+@typeOrm.Index(['id_user', 'date'])
 export class Marcaje {
   @typeOrm.PrimaryGeneratedColumn()
   id: number;
@@ -9,10 +10,7 @@ export class Marcaje {
   @typeOrm.Column()
   id_user: number;
 
-  @typeOrm.CreateDateColumn({
-    type: 'timestamp with time zone',
-    default: () => 'CURRENT_TIMESTAMP',
-  })
+  @typeOrm.Column({ type: 'timestamptz', default: () => 'now()' })
   date: Date;
 
   @typeOrm.Column({
@@ -25,9 +23,9 @@ export class Marcaje {
   @typeOrm.Column({ default: false })
   adminFlag: boolean;
 
-  @typeOrm.Column({ nullable: true })
-  latCoordinate: string;
+  @typeOrm.Column({ type: 'varchar', length: 32, nullable: true })
+  latCoordinate: string | null;
 
-  @typeOrm.Column({ nullable: true })
-  longCoordinate: string;
+  @typeOrm.Column({ type: 'varchar', length: 32, nullable: true })
+  longCoordinate: string | null;
 }
