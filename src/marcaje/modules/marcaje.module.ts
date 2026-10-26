@@ -12,8 +12,20 @@ import { DailyHours } from 'src/entities/daily-hours';
 import { DailyHoursService } from '../services/daily-hours.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Marcaje, DailyHours, MonthlyAverageHours, YearlyAverageHours])],
+  imports: [
+    TypeOrmModule.forFeature([
+      Marcaje,
+      DailyHours,
+      MonthlyAverageHours,
+      YearlyAverageHours,
+    ]),
+  ],
   controllers: [MarcajeController, StatisticsController],
-  providers: [MarcajeService, DailyHoursService, MonthlyAverageHoursService, YearlyAverageHourService],
+  providers: [
+    MarcajeService,
+    DailyHoursService,
+    MonthlyAverageHoursService,
+    YearlyAverageHourService,
+  ],
 })
 export class MarcajeModule {}

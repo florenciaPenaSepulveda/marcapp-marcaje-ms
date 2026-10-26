@@ -1,38 +1,33 @@
-import {
-  Column,
-  CreateDateColumn,
-  Entity,
-  PrimaryGeneratedColumn,
-} from 'typeorm';
+import * as typeOrm from 'typeorm';
 import { MarcajeType } from '../enum/marcaje-type.enum';
 
-@Entity({ name: 'marcajes' })
+@typeOrm.Entity({ name: 'marcajes' })
 export class Marcaje {
-  @PrimaryGeneratedColumn()
+  @typeOrm.PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @typeOrm.Column()
   id_user: number;
 
-  @CreateDateColumn({
+  @typeOrm.CreateDateColumn({
     type: 'timestamp with time zone',
     default: () => 'CURRENT_TIMESTAMP',
   })
   date: Date;
 
-  @Column({
+  @typeOrm.Column({
     type: 'enum',
     enum: MarcajeType,
     default: MarcajeType.ENTRY,
   })
   type: MarcajeType;
 
-  @Column({ default: false })
+  @typeOrm.Column({ default: false })
   adminFlag: boolean;
 
-  @Column({ nullable: true })
+  @typeOrm.Column({ nullable: true })
   latCoordinate: string;
 
-  @Column({ nullable: true })
+  @typeOrm.Column({ nullable: true })
   longCoordinate: string;
 }

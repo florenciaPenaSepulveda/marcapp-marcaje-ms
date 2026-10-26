@@ -2,18 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MonthlyAverageHours } from 'src/entities/monthly-average-hours';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import * as shedule from '@nestjs/schedule';
 import * as moment from 'moment';
 
 @Injectable()
 export class MonthlyAverageHoursService {
-
   constructor(
     @InjectRepository(MonthlyAverageHours)
     private readonly monthlyUserHoursRepository: Repository<MonthlyAverageHours>,
   ) {}
 
-  @Cron(CronExpression.EVERY_10_SECONDS)
+  @shedule.Cron(shedule.CronExpression.EVERY_10_SECONDS)
   async updateMonthlyUserHours(): Promise<void> {
     console.log(`MonthlyCron en progreso `);
     await this.monthlyUserHoursRepository.query(
@@ -61,14 +60,18 @@ export class MonthlyAverageHoursService {
     `);
   }
 
-  async getMonthlyUserHours(): Promise<MonthlyAverageHours[]> {    
-    const monthlyHoursWork = await this.monthlyUserHoursRepository.find();
-    return monthlyHoursWork.map(monthlyHoursWork => ({
+  async getMonthlyUserHours(): Promise<MonthlyAverageHours[]> {
+    const monthlyHoursWork = await this.monthlyUserHoursRepository.find({
+      order: {
+        idUser: 'ASC',
+        month: 'ASC',
+      },
+    });
+    return monthlyHoursWork.map((monthlyHoursWork) => ({
       id: monthlyHoursWork.id,
       idUser: monthlyHoursWork.idUser,
       month: moment(monthlyHoursWork.month).format('MM-YYYY'),
       average_hours_worked: monthlyHoursWork.average_hours_worked,
     }));
-    
   }
 }

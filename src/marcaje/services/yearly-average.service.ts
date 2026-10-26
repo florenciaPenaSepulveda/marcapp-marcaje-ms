@@ -1,17 +1,17 @@
 import { Injectable } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import * as shedule from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { YearlyAverageHours } from 'src/entities/yearly-average-hours.entity';
 import { Repository } from 'typeorm';
 
 @Injectable()
 export class YearlyAverageHourService {
-    constructor(
+  constructor(
     @InjectRepository(YearlyAverageHours)
     private readonly yearlyUserHoursRepository: Repository<YearlyAverageHours>,
   ) {}
 
-  @Cron(CronExpression.EVERY_10_SECONDS)
+  @shedule.Cron(shedule.CronExpression.EVERY_10_SECONDS)
   async updateMonthlyUserHours(): Promise<void> {
     console.log(`Yearly Cron en progreso `);
     await this.yearlyUserHoursRepository.query(
@@ -58,6 +58,11 @@ export class YearlyAverageHourService {
   }
 
   async getYearlyUserHours(): Promise<YearlyAverageHours[]> {
-    return await this.yearlyUserHoursRepository.find();
+    return await this.yearlyUserHoursRepository.find({
+      order: {
+        idUser: 'ASC',
+        year: 'ASC',
+      },
+    });
   }
 }

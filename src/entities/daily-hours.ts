@@ -1,16 +1,16 @@
-import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+import * as typeoOrm from 'typeorm';
 
-@Entity('daily-hours')
+@typeoOrm.Entity('daily-hours')
 export class DailyHours {
-  @PrimaryGeneratedColumn()
+  @typeoOrm.PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @typeoOrm.Column()
   idUser: number;
 
-  @Column()
+  @typeoOrm.Column()
   day: string;
 
-  @Column('float')
+  @typeoOrm.Column('float')
   dailyHoursWorked: number;
 }

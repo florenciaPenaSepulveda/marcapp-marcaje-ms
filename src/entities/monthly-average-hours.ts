@@ -1,16 +1,16 @@
-import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+import * as typeOrm from 'typeorm';
 
-@Entity('monthly-average-hours')
+@typeOrm.Entity('monthly-average-hours')
 export class MonthlyAverageHours {
-  @PrimaryGeneratedColumn()
+  @typeOrm.PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @typeOrm.Column()
   idUser: number;
 
-  @Column()
+  @typeOrm.Column()
   month: string;
 
-  @Column('float')
+  @typeOrm.Column('float')
   average_hours_worked: number;
 }

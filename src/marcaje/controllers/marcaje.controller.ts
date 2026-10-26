@@ -1,24 +1,17 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-} from '@nestjs/common';
+import * as nestCommon from '@nestjs/common';
 import { MarcajeService } from '../services/marcaje.service';
 import { CreateMarcajeDto } from '../../dto/create-marcaje.dto';
 import { UpdateMarcajeDto } from '../../dto/update-marcaje.dto';
 import { PeriodDto } from '../../dto/get-marcaje-dates';
 import { AdminMarcajeDto } from 'src/dto/admin-marcaje.dto';
 
-@Controller('marcaje')
+@nestCommon.Controller('marcaje')
 export class MarcajeController {
   constructor(private readonly marcajeService: MarcajeService) {}
 
-  @Post()
-  async create(@Body() createMarcaje: CreateMarcajeDto) {
+  @nestCommon.Post()
+  @nestCommon.UsePipes(new nestCommon.ValidationPipe())
+  async create(@nestCommon.Body() createMarcaje: CreateMarcajeDto) {
     console.log('Controller');
 
     const { token } = createMarcaje;
@@ -38,53 +31,67 @@ export class MarcajeController {
     }
   }
 
-  @Post('/admin')
-  async marcajeAdmin(@Body() adminMarcajeDto: AdminMarcajeDto) {
+  @nestCommon.Post('/admin')
+  @nestCommon.UsePipes(new nestCommon.ValidationPipe())
+  async marcajeAdmin(@nestCommon.Body() adminMarcajeDto: AdminMarcajeDto) {
     const { token } = adminMarcajeDto;
     const { idUser } = adminMarcajeDto;
     const { date } = adminMarcajeDto;
     return this.marcajeService.adminCreate(token, idUser, date);
   }
 
-  @Get('/admin')
+  @nestCommon.Get('/admin')
   async findAll() {
     return this.marcajeService.findAll();
   }
 
-  @Post('/date/:id')
+  @nestCommon.Post('/date/:id')
+  @nestCommon.UsePipes(new nestCommon.ValidationPipe())
   async findByDate(
-    @Param('id') id: number,
-    @Body() payload: { dateInterval: { startDate: string; endDate: string } },
+    @nestCommon.Param('id') id: number,
+    @nestCommon.Body() periodDto: PeriodDto,
   ) {
-    const startDate = payload.dateInterval.startDate;
-    const endDate = payload.dateInterval.endDate;
+    const { startDate, endDate } = periodDto;
     return await this.marcajeService.getByPeriod(id, startDate, endDate);
   }
 
-  @Get('/user/week/:id')
-  async obtainWeekStart(@Param('id') id: number) {
+  @nestCommon.Get('/user/week/:id')
+  async obtainWeekStart(@nestCommon.Param('id') id: number) {
     return await this.marcajeService.getWeekStart(id);
   }
 
-  @Post('/user/today/:id')
-  existTimeRegistration(@Param('id') id: number, @Body() period: PeriodDto) {
+  @nestCommon.Post('/user/today/:id')
+  @nestCommon.UsePipes(new nestCommon.ValidationPipe())
+  existTimeRegistration(
+    @nestCommon.Param('id') id: number,
+    @nestCommon.Body() period: PeriodDto,
+  ) {
     console.log(period);
     return this.marcajeService.findFromTodayType(id, period);
   }
 
-  @Get('/user/:id')
-  findFromUser(@Param('id') id: number) {
+  @nestCommon.Get('/user/:id')
+  findFromUser(@nestCommon.Param('id') id: number) {
     return this.marcajeService.findAllFromUser(+id);
   }
 
-  @Patch('/admin/:id')
-  update(@Param('id') id: number, @Body() updateMarcaje: UpdateMarcajeDto) {
+  @nestCommon.Patch('/admin/:id')
+  @nestCommon.UsePipes(new nestCommon.ValidationPipe())
+  update(
+    @nestCommon.Param('id') id: number,
+    @nestCommon.Body() updateMarcaje: UpdateMarcajeDto,
+  ) {
     const { date } = updateMarcaje;
     return this.marcajeService.update(id, date);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
+  @nestCommon.Delete(':id')
+  remove(@nestCommon.Param('id') id: string) {
     return this.marcajeService.remove(+id);
+  }
+
+  @nestCommon.Get('/obtain/:id')
+  obtainOne(@nestCommon.Param('id') id: string) {
+    return this.marcajeService.obtainOne(+id);
   }
 }
