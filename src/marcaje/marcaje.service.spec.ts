@@ -26,6 +26,7 @@ describe('MarcajeService', () => {
     findOne: jest.Mock;
     save: jest.Mock;
     create: jest.Mock;
+    remove?: jest.Mock;
   };
   let manager: { query: jest.Mock; getRepository: jest.Mock };
   let servicio: MarcajeService;
@@ -282,6 +283,67 @@ describe('MarcajeService', () => {
     ])('estado del día con %j marcajes', async (marcas, esperado) => {
       repo.find.mockResolvedValue(marcas);
       expect(await servicio.estadoDelDia(7)).toBe(esperado);
+    });
+  });
+
+  describe('estadoDeHoyDeTodos', () => {
+    it('resume quién está trabajando y quién terminó, ordenado por usuario', async () => {
+      repo.find.mockResolvedValue([
+        marca({
+          id: 1,
+          id_user: 9,
+          type: MarcajeType.ENTRY,
+          date: new Date('2024-03-11T12:00:00Z'),
+        }),
+        marca({
+          id: 2,
+          id_user: 4,
+          type: MarcajeType.ENTRY,
+          date: new Date('2024-03-11T12:30:00Z'),
+        }),
+        marca({
+          id: 3,
+          id_user: 4,
+          type: MarcajeType.EXIT,
+          date: new Date('2024-03-11T20:30:00Z'),
+        }),
+      ]);
+      expect(await servicio.estadoDeHoyDeTodos()).toEqual([
+        {
+          idUser: 4,
+          state: 'done',
+          checkIn: '11-03-2024 09:30:00',
+          checkOut: '11-03-2024 17:30:00',
+        },
+        {
+          idUser: 9,
+          state: 'working',
+          checkIn: '11-03-2024 09:00:00',
+          checkOut: null,
+        },
+      ]);
+    });
+
+    it('devuelve una lista vacía cuando nadie ha marcado', async () => {
+      repo.find.mockResolvedValue([]);
+      expect(await servicio.estadoDeHoyDeTodos()).toEqual([]);
+    });
+  });
+
+  describe('eliminar', () => {
+    it('elimina el marcaje existente', async () => {
+      const existente = marca({ id: 5 });
+      repo.findOne.mockResolvedValue(existente);
+      repo.remove = jest.fn();
+      expect(await servicio.eliminar(5)).toEqual({ success: true });
+      expect(repo.remove).toHaveBeenCalledWith(existente);
+    });
+
+    it('falla si no existe', async () => {
+      repo.findOne.mockResolvedValue(null);
+      await expect(servicio.eliminar(5)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 });

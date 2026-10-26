@@ -5,7 +5,11 @@ import { CreateMarcajeDto } from './create-marcaje.dto';
 import { AdminMarcajeDto } from './admin-marcaje.dto';
 import { UpdateMarcajeDto } from './update-marcaje.dto';
 import { PeriodDto, TodayDto } from './get-marcaje-dates';
-import { PageQueryDto, StatisticsQueryDto } from './statistics-query.dto';
+import {
+  PageQueryDto,
+  StatisticsQueryDto,
+  SummaryQueryDto,
+} from './statistics-query.dto';
 
 const errores = async (
   clase: new () => object,
@@ -106,5 +110,19 @@ describe('consultas', () => {
     expect(await errores(StatisticsQueryDto, { userId: 'abc' })).toEqual([
       'userId',
     ]);
+  });
+
+  it('el resumen acepta un período opcional con formato DD-MM-YYYY', async () => {
+    expect(await errores(SummaryQueryDto, {})).toEqual([]);
+    expect(
+      await errores(SummaryQueryDto, {
+        userId: '7',
+        from: '01-03-2024',
+        to: '31-03-2024',
+      }),
+    ).toEqual([]);
+    expect(
+      await errores(SummaryQueryDto, { from: '2024-03-01', to: '31/03/2024' }),
+    ).toEqual(['from', 'to']);
   });
 });

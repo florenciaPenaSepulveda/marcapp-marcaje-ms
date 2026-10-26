@@ -411,6 +411,161 @@ describe('Marcapp marcaje (e2e)', () => {
     });
   });
 
+  describe('estado de hoy de todos los trabajadores', () => {
+    it('exige rol de administrador', async () => {
+      await http().get('/marcaje/admin/today').expect(401);
+      await http().get('/marcaje/admin/today').set(auth(ana)).expect(403);
+    });
+
+    it('el administrador ve quién está trabajando', async () => {
+      const res = await http()
+        .get('/marcaje/admin/today')
+        .set(auth(admin))
+        .expect(200);
+      const de = (u: { id: number }) =>
+        res.body.find((f: { idUser: number }) => f.idUser === u.id);
+      expect(de(ana)).toMatchObject({ state: 'working', checkOut: null });
+      expect(de(ana).checkIn).toMatch(/^\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}$/);
+      expect(de(beto)).toMatchObject({ state: 'working' });
+    });
+  });
+
+  describe('resumen de horas', () => {
+    const jefe = { id: aleatorio(), role: 'user' };
+    const colega = { id: aleatorio(), role: 'user' };
+    const periodo = '?from=01-04-2024&to=30-04-2024';
+
+    beforeAll(async () => {
+      await crear(jefe.id, '01-04-2024 09:00:00');
+      await crear(jefe.id, '01-04-2024 17:00:00');
+      await crear(jefe.id, '02-04-2024 09:00:00');
+      await crear(jefe.id, '02-04-2024 13:00:00');
+      await crear(jefe.id, '03-04-2024 09:00:00');
+      await crear(colega.id, '01-04-2024 10:00:00');
+      await crear(colega.id, '01-04-2024 12:00:00');
+    });
+
+    it('exige autenticación', async () => {
+      await http().get('/statistics/summary').expect(401);
+    });
+
+    it('un usuario recibe su propio resumen con días incompletos', async () => {
+      const res = await http()
+        .get(`/statistics/summary${periodo}`)
+        .set(auth(jefe))
+        .expect(200);
+      expect(res.body).toMatchObject({
+        from: '2024-04-01',
+        to: '2024-04-30',
+        daysWorked: 2,
+        totalHours: 12,
+        averageHoursPerDay: 6,
+        incompleteDays: 1,
+      });
+      expect(res.body.perUser).toEqual([
+        {
+          idUser: jefe.id,
+          daysWorked: 2,
+          totalHours: 12,
+          averageHoursPerDay: 6,
+          incompleteDays: 1,
+        },
+      ]);
+    });
+
+    it('un usuario no puede pedir el resumen de otro', async () => {
+      const res = await http()
+        .get(`/statistics/summary${periodo}&userId=${colega.id}`)
+        .set(auth(jefe))
+        .expect(200);
+      expect(res.body.perUser.map((u: { idUser: number }) => u.idUser)).toEqual(
+        [jefe.id],
+      );
+    });
+
+    it('el administrador ve a todos o filtra por trabajador', async () => {
+      const todos = await http()
+        .get(`/statistics/summary${periodo}`)
+        .set(auth(admin))
+        .expect(200);
+      const ids = todos.body.perUser.map((u: { idUser: number }) => u.idUser);
+      expect(ids).toEqual(expect.arrayContaining([jefe.id, colega.id]));
+      const uno = await http()
+        .get(`/statistics/summary${periodo}&userId=${colega.id}`)
+        .set(auth(admin))
+        .expect(200);
+      expect(uno.body).toMatchObject({
+        daysWorked: 1,
+        totalHours: 2,
+        averageHoursPerDay: 2,
+      });
+    });
+
+    it('sin parámetros usa el mes en curso', async () => {
+      const res = await http()
+        .get('/statistics/summary')
+        .set(auth(jefe))
+        .expect(200);
+      expect(res.body.from).toMatch(/^\d{4}-\d{2}-01$/);
+    });
+
+    it('valida las fechas', async () => {
+      await http()
+        .get('/statistics/summary?from=2024-04-01')
+        .set(auth(admin))
+        .expect(400);
+      await http()
+        .get('/statistics/summary?from=30-04-2024&to=01-04-2024')
+        .set(auth(admin))
+        .expect(400);
+      await http()
+        .get('/statistics/summary?from=01-01-2020&to=01-01-2024')
+        .set(auth(admin))
+        .expect(400);
+      await http()
+        .get('/statistics/summary?userId=abc')
+        .set(auth(admin))
+        .expect(400);
+    });
+  });
+
+  describe('eliminación de marcajes', () => {
+    const empleado = { id: aleatorio(), role: 'user' };
+    let idMarca: number;
+
+    beforeAll(async () => {
+      const res = await crear(empleado.id, '05-03-2024 09:00:00').expect(201);
+      idMarca = res.body.data.id;
+    });
+
+    it('exige rol de administrador', async () => {
+      await http().delete(`/marcaje/admin/${idMarca}`).expect(401);
+      await http()
+        .delete(`/marcaje/admin/${idMarca}`)
+        .set(auth(empleado))
+        .expect(403);
+    });
+
+    it('valida el identificador', async () => {
+      await http().delete('/marcaje/admin/abc').set(auth(admin)).expect(400);
+    });
+
+    it('elimina el marcaje y deja de existir', async () => {
+      await http()
+        .delete(`/marcaje/admin/${idMarca}`)
+        .set(auth(admin))
+        .expect(200, { success: true });
+      await http()
+        .get(`/marcaje/obtain/${idMarca}`)
+        .set(auth(admin))
+        .expect(404);
+      await http()
+        .delete(`/marcaje/admin/${idMarca}`)
+        .set(auth(admin))
+        .expect(404);
+    });
+  });
+
   describe('límite de solicitudes', () => {
     it('responde 429 al superar el límite', async () => {
       process.env.PROBAR_LIMITES = '1';
