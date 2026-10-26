@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
+import { SessionService } from './session.service';
 
 export interface Sesion {
   id: number;
@@ -14,7 +15,10 @@ export interface Sesion {
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(private jwtService: JwtService) {}
+  constructor(
+    private jwtService: JwtService,
+    private sessionService: SessionService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
@@ -23,14 +27,15 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException();
     }
     try {
-      const payload = await this.jwtService.verifyAsync(token);
-      if (!Number.isInteger(payload?.id) || typeof payload?.role !== 'string') {
-        throw new UnauthorizedException();
-      }
-      request.user = { id: payload.id, role: payload.role } satisfies Sesion;
+      await this.jwtService.verifyAsync(token);
     } catch {
       throw new UnauthorizedException();
     }
+    const { id, role } = await this.sessionService.validar(token);
+    if (!Number.isInteger(id) || typeof role !== 'string') {
+      throw new UnauthorizedException();
+    }
+    request.user = { id, role } satisfies Sesion;
     return true;
   }
 
