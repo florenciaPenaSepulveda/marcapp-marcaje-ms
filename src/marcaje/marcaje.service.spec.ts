@@ -27,6 +27,7 @@ describe('MarcajeService', () => {
     save: jest.Mock;
     create: jest.Mock;
     remove?: jest.Mock;
+    delete?: jest.Mock;
   };
   let manager: { query: jest.Mock; getRepository: jest.Mock };
   let servicio: MarcajeService;
@@ -344,6 +345,25 @@ describe('MarcajeService', () => {
       await expect(servicio.eliminar(5)).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+  });
+
+  describe('eliminarDeUsuario', () => {
+    it('elimina todos los marcajes del usuario y cuenta cuántos', async () => {
+      repo.delete = jest.fn().mockResolvedValue({ affected: 6 });
+      expect(await servicio.eliminarDeUsuario(7)).toEqual({
+        success: true,
+        deleted: 6,
+      });
+      expect(repo.delete).toHaveBeenCalledWith({ id_user: 7 });
+    });
+
+    it('informa cero cuando no había marcajes', async () => {
+      repo.delete = jest.fn().mockResolvedValue({});
+      expect(await servicio.eliminarDeUsuario(7)).toEqual({
+        success: true,
+        deleted: 0,
+      });
     });
   });
 });

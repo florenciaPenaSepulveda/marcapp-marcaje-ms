@@ -66,6 +66,12 @@ export class MarcajeController {
   }
 
   @Roles(ROL_ADMIN)
+  @Delete('/admin/user/:userId')
+  removeAllFromUser(@Param('userId', ParseIntPipe) userId: number) {
+    return this.marcajeService.eliminarDeUsuario(userId);
+  }
+
+  @Roles(ROL_ADMIN)
   @Delete('/admin/:id')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.marcajeService.eliminar(id);

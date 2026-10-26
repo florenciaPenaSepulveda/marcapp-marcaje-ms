@@ -297,6 +297,15 @@ export class MarcajeService {
       .sort((a, b) => a.idUser - b.idUser);
   }
 
+  async eliminarDeUsuario(
+    idUser: number,
+  ): Promise<{ success: true; deleted: number }> {
+    const { affected } = await this.marcajeRepository.delete({
+      id_user: idUser,
+    });
+    return { success: true, deleted: affected ?? 0 };
+  }
+
   async eliminar(id: number): Promise<{ success: true }> {
     const marca = await this.obtener(id);
     await this.marcajeRepository.remove(marca);
