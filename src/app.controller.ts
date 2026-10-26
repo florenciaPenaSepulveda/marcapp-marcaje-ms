@@ -1,12 +1,9 @@
-import * as nestCommon from '@nestjs/common';
-import { AppService } from './app.service';
+import { Controller, Get } from '@nestjs/common';
 
-@nestCommon.Controller()
+@Controller()
 export class AppController {
-  constructor(private readonly appService: AppService) {}
-
-  @nestCommon.Get()
-  getHello(): string {
-    return this.appService.getHello();
+  @Get(['/', '/health'])
+  health() {
+    return { status: 'ok' };
   }
 }

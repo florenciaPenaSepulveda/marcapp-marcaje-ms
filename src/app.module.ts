@@ -1,32 +1,44 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { MarcajeModule } from './marcaje/modules/marcaje.module';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Marcaje } from './entities/marcaje.entity';
-import { ConfigModule } from '@nestjs/config';
-import { MonthlyAverageHours } from './entities/monthly-average-hours';
-import { ScheduleModule } from '@nestjs/schedule';
-import { YearlyAverageHours } from './entities/yearly-average-hours.entity';
-import { DailyHours } from './entities/daily-hours';
+import { AppController } from './app.controller';
+import { MarcajeModule } from './marcaje/marcaje.module';
+import { Env, validarEntorno } from './config/env';
+import { opcionesBase } from './database/data-source';
 
 @Module({
   imports: [
-    TypeOrmModule.forRoot({
-      type: 'postgres',
-      host: '127.0.0.1',
-      port: 5432,
-      username: 'postgres',
-      password: 'jmcr0612',
-      database: 'postgres',
-      entities: [Marcaje, DailyHours, MonthlyAverageHours, YearlyAverageHours],
-      synchronize: true,
+    ConfigModule.forRoot({ isGlobal: true, validate: validarEntorno }),
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) => ({
+        throttlers: [
+          { ttl: 60000, limit: config.get('RATE_LIMIT', { infer: true }) },
+        ],
+        skipIf: () =>
+          config.get('NODE_ENV', { infer: true }) === 'test' &&
+          !process.env.PROBAR_LIMITES,
+      }),
     }),
-    ConfigModule.forRoot(),
+    TypeOrmModule.forRootAsync({
+      useFactory: () => {
+        const env = validarEntorno(process.env);
+        return {
+          ...opcionesBase(env.NODE_ENV === 'production'),
+          host: env.DB_HOST,
+          port: env.DB_PORT,
+          username: env.DB_USER,
+          password: env.DB_PASSWORD,
+          database: env.DB_NAME,
+          autoLoadEntities: true,
+        };
+      },
+    }),
     MarcajeModule,
-    ScheduleModule.forRoot(),
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
