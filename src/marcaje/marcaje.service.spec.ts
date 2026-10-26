@@ -45,9 +45,117 @@ describe('MarcajeService', () => {
       repo as never,
       dataSource as never,
       {
-        get: () => ZONA,
+        get: (clave: string) => (clave === 'OFFLINE_MAX_HOURS' ? 72 : ZONA),
       } as never,
     );
+  });
+
+  describe('registro sin conexión', () => {
+    const minutosAtras = (m: number) =>
+      new Date(Date.now() - m * 60000).toISOString();
+    const uuid = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+
+    it('usa la hora del dispositivo y marca el registro como hecho sin conexión', async () => {
+      const recordedAt = minutosAtras(20);
+      const res = await servicio.registrar(7, '-33.4', '-70.6', {
+        recordedAt,
+        clientId: uuid,
+      });
+      expect(res.success).toBe(true);
+      const creado = repo.create.mock.calls[0][0];
+      expect(creado.date.toISOString()).toBe(recordedAt);
+      expect(creado).toMatchObject({
+        offline: true,
+        clientId: uuid,
+        adminFlag: false,
+      });
+    });
+
+    it('un registro normal no se marca como sin conexión ni lleva identificador', async () => {
+      await servicio.registrar(7, '-33.4', '-70.6');
+      expect(repo.create.mock.calls[0][0]).toMatchObject({
+        offline: false,
+        clientId: null,
+      });
+    });
+
+    it('rechaza una hora futura más allá de la tolerancia del reloj', async () => {
+      const futura = new Date(Date.now() + 10 * 60000).toISOString();
+      expect(
+        await servicio.registrar(7, '1', '2', { recordedAt: futura }),
+      ).toEqual({
+        success: false,
+        message: 'The recorded time cannot be in the future',
+      });
+      expect(repo.save).not.toHaveBeenCalled();
+    });
+
+    it('ajusta a la hora actual un adelanto pequeño del reloj del dispositivo', async () => {
+      const adelantada = new Date(Date.now() + 60000).toISOString();
+      await servicio.registrar(7, '1', '2', { recordedAt: adelantada });
+      expect(repo.create.mock.calls[0][0].date.getTime()).toBeLessThanOrEqual(
+        Date.now(),
+      );
+    });
+
+    it('rechaza una hora más antigua que el máximo permitido', async () => {
+      const vieja = new Date(Date.now() - 73 * 3600000).toISOString();
+      expect(
+        await servicio.registrar(7, '1', '2', { recordedAt: vieja }),
+      ).toEqual({
+        success: false,
+        message: 'The recorded time is older than 72 hours',
+      });
+    });
+
+    it('acepta una hora dentro del máximo permitido', async () => {
+      const dentro = new Date(Date.now() - 71 * 3600000).toISOString();
+      expect(
+        (await servicio.registrar(7, '1', '2', { recordedAt: dentro })).success,
+      ).toBe(true);
+    });
+
+    it('es idempotente: un reintento con el mismo identificador devuelve el registro existente', async () => {
+      repo.findOne.mockResolvedValue(
+        marca({ id: 40, id_user: 7, clientId: uuid, offline: true }),
+      );
+      const res = await servicio.registrar(7, '1', '2', {
+        recordedAt: minutosAtras(5),
+        clientId: uuid,
+      });
+      expect(res).toMatchObject({
+        success: true,
+        data: { id: 40, offline: true },
+      });
+      expect(repo.save).not.toHaveBeenCalled();
+    });
+
+    it('rechaza un identificador que ya pertenece a otro usuario', async () => {
+      repo.findOne.mockResolvedValue(
+        marca({ id: 40, id_user: 99, clientId: uuid }),
+      );
+      expect(
+        await servicio.registrar(7, '1', '2', {
+          recordedAt: minutosAtras(5),
+          clientId: uuid,
+        }),
+      ).toEqual({
+        success: false,
+        message: 'Invalid client identifier',
+      });
+    });
+
+    it('aplica las mismas reglas de jornada a la hora del dispositivo', async () => {
+      repo.find.mockResolvedValue([
+        marca({ date: new Date(Date.now() - 60 * 60000) }),
+      ]);
+      expect(
+        await servicio.registrar(7, '1', '2', { recordedAt: minutosAtras(90) }),
+      ).toEqual({
+        success: false,
+        message: 'Exit time must be after entry time',
+      });
+    });
   });
 
   describe('registrar', () => {

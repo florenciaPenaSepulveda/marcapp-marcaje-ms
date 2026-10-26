@@ -40,6 +40,32 @@ describe('CreateMarcajeDto', () => {
   });
 });
 
+describe('CreateMarcajeDto sin conexión', () => {
+  const base = { latCoordinate: '-33.4489', longCoordinate: '-70.6693' };
+
+  it('acepta la hora ISO y el identificador UUID opcionales', async () => {
+    expect(
+      await errores(CreateMarcajeDto, {
+        ...base,
+        recordedAt: '2026-10-26T12:30:00.000Z',
+        clientId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+      }),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ['recordedAt', '26-10-2026 12:30:00'],
+    ['recordedAt', '2026-13-40T99:00:00Z'],
+    ['recordedAt', 'ayer'],
+    ['clientId', 'no-es-uuid'],
+    ['clientId', '3f2504e0-4f89-11d3-9a0c-0305e82c3301'],
+  ])('rechaza %s = %s', async (campo, valor) => {
+    expect(
+      await errores(CreateMarcajeDto, { ...base, [campo]: valor }),
+    ).toEqual([campo]);
+  });
+});
+
 describe('AdminMarcajeDto y UpdateMarcajeDto', () => {
   it('acepta el formato DD-MM-YYYY HH:mm:ss', async () => {
     expect(

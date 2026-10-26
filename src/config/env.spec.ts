@@ -11,6 +11,7 @@ describe('validarEntorno', () => {
       NODE_ENV: 'development',
       USERS_SERVICE_URL: 'http://127.0.0.1:3001',
       SESSION_CACHE_SECONDS: 15,
+      OFFLINE_MAX_HOURS: 72,
     });
   });
 
@@ -36,6 +37,18 @@ describe('validarEntorno', () => {
       validarEntorno({ ...base, SESSION_CACHE_SECONDS: '0' })
         .SESSION_CACHE_SECONDS,
     ).toBe(0);
+  });
+
+  it('acota las horas máximas para registros sin conexión', () => {
+    expect(() => validarEntorno({ ...base, OFFLINE_MAX_HOURS: '0' })).toThrow(
+      /OFFLINE_MAX_HOURS/,
+    );
+    expect(() => validarEntorno({ ...base, OFFLINE_MAX_HOURS: '721' })).toThrow(
+      /OFFLINE_MAX_HOURS/,
+    );
+    expect(
+      validarEntorno({ ...base, OFFLINE_MAX_HOURS: '24' }).OFFLINE_MAX_HOURS,
+    ).toBe(24);
   });
 
   it('rechaza una zona horaria desconocida', () => {

@@ -221,6 +221,141 @@ describe('Marcapp marcaje (e2e)', () => {
     });
   });
 
+  describe('registro sin conexión', () => {
+    const minutosAtras = (m: number) =>
+      new Date(Date.now() - m * 60000).toISOString();
+    const uuid = () => crypto.randomUUID();
+
+    it('guarda la hora del dispositivo, marca el registro y respeta el orden entrada-salida', async () => {
+      const trabajador = { id: aleatorio(), role: 'user' };
+      const entrada = minutosAtras(12);
+      const salida = minutosAtras(6);
+      const idEntrada = uuid();
+      const e = await http()
+        .post('/marcaje')
+        .set(auth(trabajador))
+        .send({ ...ubicacion, recordedAt: entrada, clientId: idEntrada })
+        .expect(201);
+      expect(e.body).toMatchObject({
+        success: true,
+        data: { type: 'entry', offline: true },
+      });
+      const s = await http()
+        .post('/marcaje')
+        .set(auth(trabajador))
+        .send({ ...ubicacion, recordedAt: salida, clientId: uuid() })
+        .expect(201);
+      expect(s.body).toMatchObject({
+        success: true,
+        data: { type: 'exit', offline: true },
+      });
+      const lista = await http()
+        .get(`/marcaje/user/${trabajador.id}`)
+        .set(auth(trabajador))
+        .expect(200);
+      expect(lista.body).toHaveLength(2);
+      expect(lista.body.every((m: { offline: boolean }) => m.offline)).toBe(
+        true,
+      );
+    });
+
+    it('un reintento con el mismo identificador no duplica el registro', async () => {
+      const trabajador = { id: aleatorio(), role: 'user' };
+      const cuerpo = {
+        ...ubicacion,
+        recordedAt: minutosAtras(10),
+        clientId: uuid(),
+      };
+      const primero = await http()
+        .post('/marcaje')
+        .set(auth(trabajador))
+        .send(cuerpo)
+        .expect(201);
+      const segundo = await http()
+        .post('/marcaje')
+        .set(auth(trabajador))
+        .send(cuerpo)
+        .expect(201);
+      expect(segundo.body.success).toBe(true);
+      expect(segundo.body.data.id).toBe(primero.body.data.id);
+      const lista = await http()
+        .get(`/marcaje/user/${trabajador.id}`)
+        .set(auth(trabajador))
+        .expect(200);
+      expect(lista.body).toHaveLength(1);
+    });
+
+    it('otro usuario no puede reutilizar un identificador ajeno', async () => {
+      const dueno = { id: aleatorio(), role: 'user' };
+      const intruso = { id: aleatorio(), role: 'user' };
+      const cuerpo = {
+        ...ubicacion,
+        recordedAt: minutosAtras(10),
+        clientId: uuid(),
+      };
+      await http().post('/marcaje').set(auth(dueno)).send(cuerpo).expect(201);
+      const res = await http()
+        .post('/marcaje')
+        .set(auth(intruso))
+        .send(cuerpo)
+        .expect(201);
+      expect(res.body).toEqual({
+        success: false,
+        message: 'Invalid client identifier',
+      });
+    });
+
+    it('rechaza horas futuras y demasiado antiguas', async () => {
+      const trabajador = { id: aleatorio(), role: 'user' };
+      const futura = await http()
+        .post('/marcaje')
+        .set(auth(trabajador))
+        .send({
+          ...ubicacion,
+          recordedAt: new Date(Date.now() + 3600000).toISOString(),
+        })
+        .expect(201);
+      expect(futura.body.message).toMatch(/future/);
+      const vieja = await http()
+        .post('/marcaje')
+        .set(auth(trabajador))
+        .send({
+          ...ubicacion,
+          recordedAt: new Date(Date.now() - 100 * 3600000).toISOString(),
+        })
+        .expect(201);
+      expect(vieja.body.message).toMatch(/older than 72 hours/);
+    });
+
+    it('valida el formato de la hora y del identificador', async () => {
+      const trabajador = { id: aleatorio(), role: 'user' };
+      await http()
+        .post('/marcaje')
+        .set(auth(trabajador))
+        .send({ ...ubicacion, recordedAt: '26-10-2026 10:00:00' })
+        .expect(400);
+      await http()
+        .post('/marcaje')
+        .set(auth(trabajador))
+        .send({ ...ubicacion, clientId: 'no-es-uuid' })
+        .expect(400);
+    });
+
+    it('el administrador ve qué marcajes se hicieron sin conexión', async () => {
+      const trabajador = { id: aleatorio(), role: 'user' };
+      await http()
+        .post('/marcaje')
+        .set(auth(trabajador))
+        .send({ ...ubicacion, recordedAt: minutosAtras(15), clientId: uuid() })
+        .expect(201);
+      const res = await http()
+        .get(`/marcaje/user/${trabajador.id}`)
+        .set(auth(admin))
+        .expect(200);
+      expect(res.body[0].offline).toBe(true);
+    });
+  });
+
   describe('lectura y propiedad de los datos', () => {
     it('un usuario ve sus marcajes y no los de otro', async () => {
       const propios = await http()
