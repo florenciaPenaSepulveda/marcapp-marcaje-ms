@@ -1,24 +1,428 @@
-import { Test, TestingModule } from '@nestjs/testing';
+process.env.NODE_ENV = 'test';
+process.env.JWT_SECRET ??= 'secreto-de-pruebas-con-mas-de-32-caracteres';
+process.env.DB_NAME = process.env.DB_NAME_TEST ?? 'marcajedb_test';
+
 import { INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import * as jwt from 'jsonwebtoken';
 import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
+import { configurarApp } from './../src/app.setup';
 
-describe('AppController (e2e)', () => {
+const aleatorio = () => Math.floor(Math.random() * 1_000_000) + 1000;
+const firmar = (id: number, role: string, secreto = process.env.JWT_SECRET) =>
+  jwt.sign({ id, role, email: `u${id}@test.cl` }, secreto, { expiresIn: '1h' });
+
+describe('Marcapp marcaje (e2e)', () => {
   let app: INestApplication;
+  const http = () => request(app.getHttpServer());
+  const admin = { id: aleatorio(), role: 'admin' };
+  const ana = { id: aleatorio(), role: 'user' };
+  const beto = { id: aleatorio(), role: 'user' };
+  const auth = (u: { id: number; role: string }) => ({
+    Authorization: `Bearer ${firmar(u.id, u.role)}`,
+  });
+  const ubicacion = { latCoordinate: '-33.4489', longCoordinate: '-70.6693' };
 
-  beforeEach(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
+  const crear = (idUser: number, date: string) =>
+    http().post('/marcaje/admin').set(auth(admin)).send({ idUser, date });
+
+  beforeAll(async () => {
+    const modulo = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-
-    app = moduleFixture.createNestApplication();
+    app = modulo.createNestApplication();
+    configurarApp(app);
     await app.init();
   });
 
-  it('/ (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/')
-      .expect(200)
-      .expect('Hello World!');
+  afterAll(async () => {
+    await app.close();
+  });
+
+  describe('acceso', () => {
+    it('responde en la raíz y envía cabeceras de seguridad', async () => {
+      const res = await http().get('/').expect(200, { status: 'ok' });
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(res.headers['x-powered-by']).toBeUndefined();
+    });
+
+    it.each([
+      ['post', '/marcaje'],
+      ['post', '/marcaje/admin'],
+      ['get', '/marcaje/admin'],
+      ['patch', '/marcaje/admin/1'],
+      ['post', '/marcaje/date/1'],
+      ['get', '/marcaje/user/week/1'],
+      ['post', '/marcaje/user/today/1'],
+      ['get', '/marcaje/user/1'],
+      ['get', '/marcaje/obtain/1'],
+      ['get', '/statistics/daily'],
+      ['get', '/statistics/monthly'],
+      ['get', '/statistics/yearly'],
+    ] as const)('%s %s exige autenticación', async (metodo, ruta) => {
+      await http()[metodo](ruta).expect(401);
+      await http()
+        [metodo](ruta)
+        .set('Authorization', 'Bearer inventado')
+        .expect(401);
+    });
+
+    it('rechaza un token firmado con otro secreto o sin rol', async () => {
+      const otro = firmar(
+        ana.id,
+        'admin',
+        'otro-secreto-distinto-de-32-caracteres-xx',
+      );
+      await http()
+        .get('/marcaje/admin')
+        .set('Authorization', `Bearer ${otro}`)
+        .expect(401);
+      const sinRol = jwt.sign({ id: ana.id }, process.env.JWT_SECRET);
+      await http()
+        .get('/marcaje/user/1')
+        .set('Authorization', `Bearer ${sinRol}`)
+        .expect(401);
+    });
+
+    it('los endpoints sin efecto ya no existen', async () => {
+      await http().delete('/marcaje/1').set(auth(admin)).expect(404);
+    });
+  });
+
+  describe('registro del propio usuario', () => {
+    it('la primera marca es la entrada y la identidad sale del token', async () => {
+      const res = await http()
+        .post('/marcaje')
+        .set(auth(ana))
+        .send(ubicacion)
+        .expect(201);
+      expect(res.body).toMatchObject({
+        success: true,
+        data: {
+          id_user: ana.id,
+          type: 'entry',
+          adminFlag: false,
+          latCoordinate: '-33.4489',
+        },
+      });
+    });
+
+    it('un segundo toque inmediato se rechaza y no genera una salida accidental', async () => {
+      const res = await http()
+        .post('/marcaje')
+        .set(auth(ana))
+        .send(ubicacion)
+        .expect(201);
+      expect(res.body).toMatchObject({
+        success: false,
+        message: expect.stringMatching(/Espera/),
+      });
+      const estado = await http()
+        .post(`/marcaje/user/today/${ana.id}`)
+        .set(auth(ana))
+        .send({})
+        .expect(201);
+      expect(estado.body).toBe(1);
+    });
+
+    it('dos solicitudes simultáneas no duplican la entrada', async () => {
+      const [a, b] = await Promise.all([
+        http().post('/marcaje').set(auth(beto)).send(ubicacion),
+        http().post('/marcaje').set(auth(beto)).send(ubicacion),
+      ]);
+      expect([a.body.success, b.body.success].sort()).toEqual([false, true]);
+      const lista = await http()
+        .get(`/marcaje/user/${beto.id}`)
+        .set(auth(beto))
+        .expect(200);
+      expect(lista.body).toHaveLength(1);
+    });
+
+    it('valida las coordenadas y rechaza campos desconocidos como el token en el cuerpo', async () => {
+      await http()
+        .post('/marcaje')
+        .set(auth(ana))
+        .send({ ...ubicacion, latCoordinate: '99' })
+        .expect(400);
+      await http()
+        .post('/marcaje')
+        .set(auth(ana))
+        .send({ ...ubicacion, token: 'x' })
+        .expect(400);
+      await http()
+        .post('/marcaje')
+        .set(auth(ana))
+        .send({ ...ubicacion, id_user: 1 })
+        .expect(400);
+    });
+  });
+
+  describe('lectura y propiedad de los datos', () => {
+    it('un usuario ve sus marcajes y no los de otro', async () => {
+      const propios = await http()
+        .get(`/marcaje/user/${ana.id}`)
+        .set(auth(ana))
+        .expect(200);
+      expect(
+        propios.body.every((m: { id_user: number }) => m.id_user === ana.id),
+      ).toBe(true);
+      await http().get(`/marcaje/user/${beto.id}`).set(auth(ana)).expect(403);
+      await http()
+        .get(`/marcaje/user/week/${beto.id}`)
+        .set(auth(ana))
+        .expect(403);
+      await http()
+        .post(`/marcaje/date/${beto.id}`)
+        .set(auth(ana))
+        .send({ startDate: '01-01-2024', endDate: '31-01-2024' })
+        .expect(403);
+      await http()
+        .post(`/marcaje/user/today/${beto.id}`)
+        .set(auth(ana))
+        .send({})
+        .expect(403);
+    });
+
+    it('obtener un marcaje exige ser su dueño o administrador', async () => {
+      const [marca] = (
+        await http().get(`/marcaje/user/${ana.id}`).set(auth(ana)).expect(200)
+      ).body;
+      await http()
+        .get(`/marcaje/obtain/${marca.id}`)
+        .set(auth(ana))
+        .expect(200);
+      await http()
+        .get(`/marcaje/obtain/${marca.id}`)
+        .set(auth(beto))
+        .expect(403);
+      await http()
+        .get(`/marcaje/obtain/${marca.id}`)
+        .set(auth(admin))
+        .expect(200);
+      await http().get('/marcaje/obtain/99999999').set(auth(admin)).expect(404);
+    });
+
+    it('los identificadores inválidos se rechazan', async () => {
+      await http().get('/marcaje/user/abc').set(auth(admin)).expect(400);
+      await http().get('/marcaje/user/1?limit=0').set(auth(admin)).expect(400);
+    });
+
+    it('un usuario común no accede a las rutas de administración', async () => {
+      await http().get('/marcaje/admin').set(auth(ana)).expect(403);
+      await http()
+        .post('/marcaje/admin')
+        .set(auth(ana))
+        .send({ idUser: ana.id, date: '01-01-2024 09:00:00' })
+        .expect(403);
+      await http()
+        .patch('/marcaje/admin/1')
+        .set(auth(ana))
+        .send({ date: '01-01-2024 09:00:00' })
+        .expect(403);
+    });
+
+    it('el administrador lista todos los marcajes con paginación', async () => {
+      const res = await http()
+        .get('/marcaje/admin?limit=1')
+        .set(auth(admin))
+        .expect(200);
+      expect(res.body).toHaveLength(1);
+    });
+  });
+
+  describe('administración de marcajes y zona horaria', () => {
+    const usuario = { id: aleatorio(), role: 'user' };
+
+    it('crea la jornada completa con fechas en la zona horaria de Santiago', async () => {
+      const entrada = await crear(usuario.id, '11-03-2024 09:00:00').expect(
+        201,
+      );
+      expect(entrada.body).toMatchObject({
+        success: true,
+        data: { type: 'entry', adminFlag: true, date: '11-03-2024 09:00:00' },
+      });
+      const salida = await crear(usuario.id, '11-03-2024 17:30:00').expect(201);
+      expect(salida.body.data).toMatchObject({
+        type: 'exit',
+        date: '11-03-2024 17:30:00',
+      });
+      const completa = await crear(usuario.id, '11-03-2024 18:00:00').expect(
+        201,
+      );
+      expect(completa.body).toEqual({
+        success: false,
+        message: 'Ya se registró marcaje de entrada y salida',
+      });
+    });
+
+    it('rechaza fechas inválidas, futuras o con la salida antes de la entrada', async () => {
+      await crear(usuario.id, '2024-03-12 09:00:00').expect(400);
+      const futura = await crear(usuario.id, '01-01-2099 09:00:00').expect(201);
+      expect(futura.body.message).toMatch(/futura/);
+      await crear(usuario.id, '12-03-2024 10:00:00').expect(201);
+      const antes = await crear(usuario.id, '12-03-2024 09:00:00').expect(201);
+      expect(antes.body.message).toMatch(/posterior a la entrada/);
+    });
+
+    it('edita un marcaje respetando el orden y el día', async () => {
+      const lista = await http()
+        .get(`/marcaje/user/${usuario.id}`)
+        .set(auth(admin))
+        .expect(200);
+      const entrada = lista.body.find(
+        (m: { date: string; type: string }) => m.date === '11-03-2024 09:00:00',
+      );
+      const ok = await http()
+        .patch(`/marcaje/admin/${entrada.id}`)
+        .set(auth(admin))
+        .send({ date: '11-03-2024 08:45:00' })
+        .expect(200);
+      expect(ok.body).toMatchObject({
+        success: true,
+        data: { date: '11-03-2024 08:45:00', adminFlag: true },
+      });
+      const despues = await http()
+        .patch(`/marcaje/admin/${entrada.id}`)
+        .set(auth(admin))
+        .send({ date: '11-03-2024 18:00:00' })
+        .expect(200);
+      expect(despues.body.message).toMatch(/anterior a la salida/);
+      const otroDia = await http()
+        .patch(`/marcaje/admin/${entrada.id}`)
+        .set(auth(admin))
+        .send({ date: '12-03-2024 08:45:00' })
+        .expect(200);
+      expect(otroDia.body.message).toMatch(/mismo día/);
+      await http()
+        .patch('/marcaje/admin/99999999')
+        .set(auth(admin))
+        .send({ date: '11-03-2024 08:00:00' })
+        .expect(404);
+    });
+
+    it('consulta por período incluyendo todo el último día', async () => {
+      const res = await http()
+        .post(`/marcaje/date/${usuario.id}`)
+        .set(auth(usuario))
+        .send({ startDate: '11-03-2024', endDate: '11-03-2024' })
+        .expect(201);
+      expect(res.body.map((m: { date: string }) => m.date)).toEqual([
+        '11-03-2024 08:45:00',
+        '11-03-2024 17:30:00',
+      ]);
+      await http()
+        .post(`/marcaje/date/${usuario.id}`)
+        .set(auth(usuario))
+        .send({ startDate: '12-03-2024', endDate: '11-03-2024' })
+        .expect(400);
+      await http()
+        .post(`/marcaje/date/${usuario.id}`)
+        .set(auth(usuario))
+        .send({ startDate: '01-01-2020', endDate: '01-01-2024' })
+        .expect(400);
+    });
+  });
+
+  describe('estadísticas', () => {
+    const trabajador = { id: aleatorio(), role: 'user' };
+    const otro = { id: aleatorio(), role: 'user' };
+
+    beforeAll(async () => {
+      await crear(trabajador.id, '11-03-2024 09:00:00');
+      await crear(trabajador.id, '11-03-2024 17:30:00');
+      await crear(trabajador.id, '12-03-2024 22:00:00');
+      await crear(trabajador.id, '12-03-2024 23:30:00');
+      await crear(trabajador.id, '09-03-2024 10:00:00');
+      await crear(trabajador.id, '09-03-2024 14:00:00');
+      await crear(otro.id, '11-03-2024 08:00:00');
+      await crear(otro.id, '11-03-2024 12:00:00');
+    });
+
+    it('calcula las horas por día en hora local, incluso si en UTC cae al día siguiente', async () => {
+      const res = await http()
+        .get('/statistics/daily')
+        .set(auth(trabajador))
+        .expect(200);
+      expect(
+        res.body.map(
+          ({
+            day,
+            dailyHoursWorked,
+          }: {
+            day: string;
+            dailyHoursWorked: number;
+          }) => [day, dailyHoursWorked],
+        ),
+      ).toEqual([
+        ['09-03-2024', 4],
+        ['11-03-2024', 8.5],
+        ['12-03-2024', 1.5],
+      ]);
+      expect(
+        res.body.every((f: { idUser: number }) => f.idUser === trabajador.id),
+      ).toBe(true);
+    });
+
+    it('el promedio mensual excluye los fines de semana y el anual los incluye', async () => {
+      const mensual = await http()
+        .get('/statistics/monthly')
+        .set(auth(trabajador))
+        .expect(200);
+      expect(mensual.body).toHaveLength(1);
+      expect(mensual.body[0]).toMatchObject({ month: '03-2024' });
+      expect(mensual.body[0].average_hours_worked).toBeCloseTo(5, 5);
+      const anual = await http()
+        .get('/statistics/yearly')
+        .set(auth(trabajador))
+        .expect(200);
+      expect(anual.body[0]).toMatchObject({ year: '2024' });
+      expect(anual.body[0].average_hours_worked).toBeCloseTo(14 / 3, 5);
+    });
+
+    it('un usuario común solo ve sus propias estadísticas aunque pida las de otro', async () => {
+      const res = await http()
+        .get(`/statistics/daily?userId=${otro.id}`)
+        .set(auth(trabajador))
+        .expect(200);
+      expect(
+        res.body.every((f: { idUser: number }) => f.idUser === trabajador.id),
+      ).toBe(true);
+    });
+
+    it('el administrador ve a todos o filtra por usuario', async () => {
+      const todos = await http()
+        .get('/statistics/daily')
+        .set(auth(admin))
+        .expect(200);
+      const ids = new Set(todos.body.map((f: { idUser: number }) => f.idUser));
+      expect(ids.has(trabajador.id) && ids.has(otro.id)).toBe(true);
+      const uno = await http()
+        .get(`/statistics/daily?userId=${otro.id}`)
+        .set(auth(admin))
+        .expect(200);
+      expect(uno.body).toEqual([
+        { id: 1, idUser: otro.id, day: '11-03-2024', dailyHoursWorked: 4 },
+      ]);
+      await http()
+        .get('/statistics/daily?userId=abc')
+        .set(auth(admin))
+        .expect(400);
+    });
+  });
+
+  describe('límite de solicitudes', () => {
+    it('responde 429 al superar el límite', async () => {
+      process.env.PROBAR_LIMITES = '1';
+      try {
+        const estados: number[] = [];
+        for (let i = 0; i < 70; i++) {
+          estados.push((await http().get('/health')).status);
+        }
+        expect(estados).toContain(429);
+      } finally {
+        delete process.env.PROBAR_LIMITES;
+      }
+    });
   });
 });
