@@ -85,7 +85,7 @@ describe('MarcajeService', () => {
       const res = await servicio.registrar(7, '1', '2');
       expect(res).toEqual({
         success: false,
-        message: 'Ya se registró marcaje de entrada y salida',
+        message: 'Entry and exit already registered for today',
       });
       expect(repo.save).not.toHaveBeenCalled();
     });
@@ -99,7 +99,7 @@ describe('MarcajeService', () => {
       const res = await servicio.registrar(7, '1', '2');
       expect(res).toMatchObject({
         success: false,
-        message: expect.stringMatching(/Espera/),
+        message: expect.stringMatching(/Please wait/),
       });
       expect(repo.save).not.toHaveBeenCalled();
     });
@@ -109,12 +109,12 @@ describe('MarcajeService', () => {
     it('rechaza fechas con formato inválido o futuras', async () => {
       expect(await servicio.registrarComoAdmin(7, '2024-03-11')).toMatchObject({
         success: false,
-        message: expect.stringMatching(/no es válida/),
+        message: expect.stringMatching(/Invalid date/),
       });
       const futura = texto(new Date(Date.now() + 86400000));
       expect(await servicio.registrarComoAdmin(7, futura)).toEqual({
         success: false,
-        message: 'La fecha no puede ser futura',
+        message: 'The date cannot be in the future',
       });
     });
 
@@ -132,7 +132,7 @@ describe('MarcajeService', () => {
       const res = await servicio.registrarComoAdmin(7, texto(hace(60)));
       expect(res).toEqual({
         success: false,
-        message: 'La salida debe ser posterior a la entrada',
+        message: 'Exit time must be after entry time',
       });
     });
   });
@@ -164,7 +164,7 @@ describe('MarcajeService', () => {
         await servicio.actualizar(5, texto(new Date(Date.now() + 86400000))),
       ).toEqual({
         success: false,
-        message: 'La fecha no puede ser futura',
+        message: 'The date cannot be in the future',
       });
     });
 
@@ -172,7 +172,7 @@ describe('MarcajeService', () => {
       repo.findOne.mockResolvedValue({ ...entrada });
       expect(await servicio.actualizar(5, '12-03-2024 09:00:00')).toEqual({
         success: false,
-        message: 'El marcaje debe seguir en el mismo día',
+        message: 'The time registration must stay on the same day',
       });
     });
 
@@ -182,14 +182,14 @@ describe('MarcajeService', () => {
       expect(await servicio.actualizar(5, '11-03-2024 18:00:00')).toMatchObject(
         {
           success: false,
-          message: 'La entrada debe ser anterior a la salida',
+          message: 'Entry time must be before exit time',
         },
       );
       repo.findOne.mockResolvedValue({ ...salida });
       expect(await servicio.actualizar(6, '11-03-2024 08:00:00')).toMatchObject(
         {
           success: false,
-          message: 'La salida debe ser posterior a la entrada',
+          message: 'Exit time must be after entry time',
         },
       );
     });
@@ -252,7 +252,7 @@ describe('MarcajeService', () => {
         ).rejects.toBeInstanceOf(BadRequestException);
         await expect(
           servicio.porPeriodo(7, '01-01-2020', '01-01-2024'),
-        ).rejects.toThrow(/no puede superar/);
+        ).rejects.toThrow(/cannot exceed/);
       });
 
       it('incluye todo el último día del período', async () => {

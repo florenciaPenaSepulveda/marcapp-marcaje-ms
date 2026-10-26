@@ -36,6 +36,8 @@ export const esAdmin = (sesion: Sesion): boolean => sesion.role === ROL_ADMIN;
 
 export const autorizarAcceso = (sesion: Sesion, idUsuario: number): void => {
   if (!esAdmin(sesion) && sesion.id !== idUsuario) {
-    throw new ForbiddenException('No tienes permiso para ver estos datos');
+    throw new ForbiddenException(
+      'You do not have permission to access this data',
+    );
   }
 };

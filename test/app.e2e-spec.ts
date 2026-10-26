@@ -116,7 +116,7 @@ describe('Marcapp marcaje (e2e)', () => {
         .expect(201);
       expect(res.body).toMatchObject({
         success: false,
-        message: expect.stringMatching(/Espera/),
+        message: expect.stringMatching(/Please wait/),
       });
       const estado = await http()
         .post(`/marcaje/user/today/${ana.id}`)
@@ -252,17 +252,17 @@ describe('Marcapp marcaje (e2e)', () => {
       );
       expect(completa.body).toEqual({
         success: false,
-        message: 'Ya se registró marcaje de entrada y salida',
+        message: 'Entry and exit already registered for today',
       });
     });
 
     it('rechaza fechas inválidas, futuras o con la salida antes de la entrada', async () => {
       await crear(usuario.id, '2024-03-12 09:00:00').expect(400);
       const futura = await crear(usuario.id, '01-01-2099 09:00:00').expect(201);
-      expect(futura.body.message).toMatch(/futura/);
+      expect(futura.body.message).toMatch(/future/);
       await crear(usuario.id, '12-03-2024 10:00:00').expect(201);
       const antes = await crear(usuario.id, '12-03-2024 09:00:00').expect(201);
-      expect(antes.body.message).toMatch(/posterior a la entrada/);
+      expect(antes.body.message).toMatch(/after entry/);
     });
 
     it('edita un marcaje respetando el orden y el día', async () => {
@@ -287,13 +287,13 @@ describe('Marcapp marcaje (e2e)', () => {
         .set(auth(admin))
         .send({ date: '11-03-2024 18:00:00' })
         .expect(200);
-      expect(despues.body.message).toMatch(/anterior a la salida/);
+      expect(despues.body.message).toMatch(/before exit/);
       const otroDia = await http()
         .patch(`/marcaje/admin/${entrada.id}`)
         .set(auth(admin))
         .send({ date: '12-03-2024 08:45:00' })
         .expect(200);
-      expect(otroDia.body.message).toMatch(/mismo día/);
+      expect(otroDia.body.message).toMatch(/same day/);
       await http()
         .patch('/marcaje/admin/99999999')
         .set(auth(admin))

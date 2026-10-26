@@ -73,11 +73,11 @@ export class MarcajeService {
     if (!fecha) {
       return {
         success: false,
-        message: `La fecha ${fechaTexto} no es válida, debe tener el formato DD-MM-YYYY HH:mm:ss`,
+        message: `Invalid date ${fechaTexto}, the format must be DD-MM-YYYY HH:mm:ss`,
       };
     }
     if (fecha.isAfter()) {
-      return { success: false, message: 'La fecha no puede ser futura' };
+      return { success: false, message: 'The date cannot be in the future' };
     }
     return this.crearMarca(idUser, fecha.toDate(), {
       latCoordinate: '0',
@@ -107,13 +107,13 @@ export class MarcajeService {
       if (entrada && salida) {
         return {
           success: false,
-          message: 'Ya se registró marcaje de entrada y salida',
+          message: 'Entry and exit already registered for today',
         } as const;
       }
       if (entrada && fecha <= entrada.date) {
         return {
           success: false,
-          message: 'La salida debe ser posterior a la entrada',
+          message: 'Exit time must be after entry time',
         } as const;
       }
       if (
@@ -122,7 +122,7 @@ export class MarcajeService {
       ) {
         return {
           success: false,
-          message: 'Espera unos segundos antes de registrar nuevamente',
+          message: 'Please wait a few seconds before registering again',
         } as const;
       }
       const { esperaMinima: _omitida, ...campos } = datos;
@@ -144,23 +144,23 @@ export class MarcajeService {
   ): Promise<Resultado<MarcajeFormateado>> {
     const marca = await this.marcajeRepository.findOne({ where: { id } });
     if (!marca) {
-      throw new NotFoundException('Marcaje no encontrado');
+      throw new NotFoundException('Time registration not found');
     }
     const nueva = analizarFechaHora(fechaTexto, this.zona);
     if (!nueva) {
       return {
         success: false,
-        message: `La fecha ${fechaTexto} no es válida, debe tener el formato DD-MM-YYYY HH:mm:ss`,
+        message: `Invalid date ${fechaTexto}, the format must be DD-MM-YYYY HH:mm:ss`,
       };
     }
     const fecha = nueva.toDate();
     if (nueva.isAfter()) {
-      return { success: false, message: 'La fecha no puede ser futura' };
+      return { success: false, message: 'The date cannot be in the future' };
     }
     if (!mismoDia(fecha, marca.date, this.zona)) {
       return {
         success: false,
-        message: 'El marcaje debe seguir en el mismo día',
+        message: 'The time registration must stay on the same day',
       };
     }
 
@@ -173,13 +173,13 @@ export class MarcajeService {
       if (marca.type === MarcajeType.ENTRY && fecha >= otra.date) {
         return {
           success: false,
-          message: 'La entrada debe ser anterior a la salida',
+          message: 'Entry time must be before exit time',
         };
       }
       if (marca.type === MarcajeType.EXIT && fecha <= otra.date) {
         return {
           success: false,
-          message: 'La salida debe ser posterior a la entrada',
+          message: 'Exit time must be after entry time',
         };
       }
     }
@@ -195,7 +195,7 @@ export class MarcajeService {
   async obtener(id: number): Promise<Marcaje> {
     const marca = await this.marcajeRepository.findOne({ where: { id } });
     if (!marca) {
-      throw new NotFoundException('Marcaje no encontrado');
+      throw new NotFoundException('Time registration not found');
     }
     return marca;
   }
@@ -223,18 +223,16 @@ export class MarcajeService {
     const inicio = analizarFecha(desde, this.zona);
     const fin = analizarFecha(hasta, this.zona);
     if (!inicio || !fin) {
-      throw new BadRequestException(
-        'Las fechas deben tener el formato DD-MM-YYYY',
-      );
+      throw new BadRequestException('Dates must use the format DD-MM-YYYY');
     }
     if (fin.isBefore(inicio)) {
       throw new BadRequestException(
-        'La fecha final debe ser posterior a la inicial',
+        'The end date must not be before the start date',
       );
     }
     if (fin.diff(inicio, 'days') > DIAS_MAXIMOS_POR_CONSULTA) {
       throw new BadRequestException(
-        `El período no puede superar ${DIAS_MAXIMOS_POR_CONSULTA} días`,
+        `The period cannot exceed ${DIAS_MAXIMOS_POR_CONSULTA} days`,
       );
     }
     const marcas = await this.marcajeRepository.find({
