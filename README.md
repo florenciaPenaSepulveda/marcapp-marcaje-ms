@@ -68,7 +68,7 @@ Todas las rutas, salvo el estado del servicio, exigen `Authorization: Bearer <to
 
 ## Reglas de negocio
 
-- La identidad del usuario sale siempre del token; ningún endpoint recibe el token ni el identificador del usuario en el cuerpo.
+- La identidad del usuario sale siempre de la sesión validada, nunca del cuerpo de la solicitud; ningún endpoint recibe el token ni el identificador del usuario en el cuerpo.
 - Cada día (en la zona horaria configurada) admite una entrada y luego una salida. La salida debe ser posterior a la entrada.
 - Dos marcajes automáticos del mismo usuario deben distanciarse al menos 30 segundos, y el registro usa un bloqueo transaccional por usuario, de modo que un doble toque o dos solicitudes simultáneas no generan marcas duplicadas.
 - Los marcajes creados o editados por un administrador quedan señalados con `adminFlag`, no pueden ser futuros y deben mantenerse dentro del mismo día.
