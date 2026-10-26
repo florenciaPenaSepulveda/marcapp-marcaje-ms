@@ -39,6 +39,7 @@ Completa en `.env` al menos `DB_PASSWORD` y `JWT_SECRET`, que debe ser **el mism
 | `JWT_SECRET` | Secreto compartido con el servicio de usuarios, obligatorio | — |
 | `USERS_SERVICE_URL` | URL del servicio de usuarios, que confirma cada sesión | `http://127.0.0.1:3001` |
 | `SESSION_CACHE_SECONDS` | Segundos que se recuerda una sesión confirmada (0 a 300; 0 la consulta siempre) | `15` |
+| `OFFLINE_MAX_HOURS` | Antigüedad máxima, en horas, de un registro hecho sin conexión (1 a 720) | `72` |
 | `TIMEZONE` | Zona horaria con la que se definen los días de trabajo | `America/Santiago` |
 | `CORS_ORIGINS` | Orígenes permitidos separados por coma | ninguno en producción |
 | `RATE_LIMIT` | Solicitudes por minuto y por IP | `60` |
@@ -51,7 +52,7 @@ Todas las rutas, salvo el estado del servicio, exigen `Authorization: Bearer <to
 | Método y ruta | Acceso | Descripción |
 |---|---|---|
 | `GET /` · `GET /health` | Público | Estado del servicio |
-| `POST /marcaje` | Usuario | Registra su entrada o su salida con latitud y longitud |
+| `POST /marcaje` | Usuario | Registra su entrada o su salida con latitud y longitud. Opcionalmente acepta `recordedAt` (hora ISO 8601 del dispositivo) y `clientId` (UUID v4) para registros hechos sin conexión |
 | `POST /marcaje/user/today/:id` | Dueño o admin | Estado de hoy: `0` sin marcas, `1` entrada, `2` jornada completa |
 | `GET /marcaje/user/:id` | Dueño o admin | Marcajes del usuario (`limit`, `offset`) |
 | `POST /marcaje/date/:id` | Dueño o admin | Marcajes entre dos fechas `DD-MM-YYYY` (máximo 366 días) |
@@ -74,11 +75,21 @@ Todas las rutas, salvo el estado del servicio, exigen `Authorization: Bearer <to
 - Los marcajes creados o editados por un administrador quedan señalados con `adminFlag`, no pueden ser futuros y deben mantenerse dentro del mismo día.
 - Las estadísticas se calculan al consultar, en la zona horaria local: un turno de 22:00 a 23:30 cuenta en su día aunque en UTC ya sea el siguiente. El promedio mensual considera solo días hábiles (lunes a viernes) y el anual todos los días con jornada completa.
 
+## Registros sin conexión
+
+La aplicación móvil guarda los marcajes en el teléfono cuando no hay señal y los envía al reconectarse. Para eso `POST /marcaje` acepta dos campos opcionales:
+
+- `recordedAt`: la hora del dispositivo cuando se marcó. El servidor la usa en lugar de la hora de recepción, pero la valida: no puede ser futura (se tolera un adelanto de 5 minutos del reloj, que se ajusta a la hora actual) ni más antigua que `OFFLINE_MAX_HOURS`. Con `recordedAt` el marcaje queda con `offline: true`, que el administrador ve en el detalle del trabajador.
+- `clientId`: identificador único generado en el teléfono. Hace idempotente el envío: si la respuesta se pierde y la app reintenta, se devuelve el marcaje ya guardado en lugar de duplicarlo. Un identificador que pertenece a otro usuario se rechaza.
+
+Se aplican las mismas reglas de jornada que a un registro en línea (entrada y luego salida, la salida posterior a la entrada y una sola jornada por día), evaluadas sobre la hora del dispositivo. Los rechazos por reglas de negocio responden `{ "success": false, "message": ... }` con estado 201, que es lo que la app interpreta como definitivo y no reintenta.
+
 ## Seguridad
 
 - Sin secretos en el código: la configuración sale del entorno y se valida al iniciar.
 - Cada solicitud se valida en dos pasos: la firma y la vigencia del token se verifican localmente con HS256, y luego `GET /auth/session` del servicio de usuarios confirma que la sesión no fue revocada (por ejemplo, tras cambiar la contraseña o eliminar al usuario) y entrega el rol vigente, que es el que se usa en lugar del que trae el token. La respuesta se recuerda `SESSION_CACHE_SECONDS` segundos, por lo que una revocación rige como máximo con ese retraso. Si el servicio de usuarios no responde, la API contesta 503 en lugar de aceptar el token sin confirmar.
 - Cada usuario solo accede a sus propios datos; las rutas de administración exigen el rol `admin`.
+- La hora enviada por el dispositivo es manipulable, por eso se acota (no futura y con antigüedad máxima) y los marcajes que la usan quedan señalados para su revisión.
 - Cuerpos y parámetros se validan con lista blanca (un campo no declarado se rechaza con 400).
 - Límite de solicitudes por IP, cabeceras de seguridad con helmet y CORS restringido.
 - Las consultas SQL de estadísticas usan parámetros; no se concatena ningún dato del usuario.
