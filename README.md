@@ -56,9 +56,12 @@ Todas las rutas, salvo el estado del servicio, exigen `Authorization: Bearer <to
 | `GET /marcaje/user/week/:id` | Dueño o admin | Marcajes de la semana actual (lunes a domingo) |
 | `GET /marcaje/obtain/:id` | Dueño o admin | Un marcaje por identificador |
 | `GET /marcaje/admin` | Admin | Todos los marcajes (`limit`, `offset`) |
+| `GET /marcaje/admin/today` | Admin | Estado de hoy de cada trabajador que marcó: `working` o `done`, con hora de entrada y salida |
 | `POST /marcaje/admin` | Admin | Crea un marcaje para un usuario en una fecha pasada |
 | `PATCH /marcaje/admin/:id` | Admin | Corrige la fecha y hora de un marcaje |
+| `DELETE /marcaje/admin/:id` | Admin | Elimina un marcaje |
 | `GET /statistics/daily` · `monthly` · `yearly` | Usuario | Horas por día, promedio mensual y anual; el admin puede filtrar con `?userId=` |
+| `GET /statistics/summary` | Usuario | Resumen de un período (`from`, `to` en `DD-MM-YYYY`; por defecto el mes en curso): días trabajados, horas totales, promedio por día, días sin salida y desglose por trabajador. El admin puede filtrar con `?userId=` |
 
 ## Reglas de negocio
 
