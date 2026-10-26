@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main, development, testing]
+  pull_request:
+
+jobs:
+  test:
+    name: Lint, compilación, pruebas y migraciones
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: marcajedb_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: ci-password
+      DB_NAME: marcajedb_mig
+      DB_NAME_TEST: marcajedb_test
+      PGPASSWORD: ci-password
+      JWT_SECRET: secreto-solo-para-el-ci-con-mas-de-32-caracteres
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint:check
+
+      - name: Compilar
+        run: npm run build
+
+      - name: Pruebas unitarias con cobertura
+        run: npm run test:cov
+
+      - name: Verificar que las migraciones reproducen el esquema
+        run: |
+          psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE marcajedb_mig"
+          npm run migration:run
+          npm run migration:check
+
+      - name: Pruebas de integración
+        run: npm run test:e2e
+
+      - name: Auditoría de dependencias
+        run: npm audit --omit=dev --audit-level=high
