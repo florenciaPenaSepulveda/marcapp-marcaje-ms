@@ -264,4 +264,42 @@ export class MarcajeService {
     }
     return delDia.some((m) => m.type === MarcajeType.ENTRY) ? 1 : 0;
   }
+
+  async estadoDeHoyDeTodos() {
+    const { inicio, fin } = rangoDelDia(new Date(), this.zona);
+    const marcas = await this.marcajeRepository.find({
+      where: { date: Between(inicio, fin) },
+      order: { date: 'ASC' },
+    });
+    const porUsuario = new Map<
+      number,
+      { checkIn: string | null; checkOut: string | null }
+    >();
+    marcas.forEach((marca) => {
+      const jornada = porUsuario.get(marca.id_user) ?? {
+        checkIn: null,
+        checkOut: null,
+      };
+      const fecha = formatearFechaHora(marca.date, this.zona);
+      if (marca.type === MarcajeType.ENTRY) {
+        jornada.checkIn = fecha;
+      } else {
+        jornada.checkOut = fecha;
+      }
+      porUsuario.set(marca.id_user, jornada);
+    });
+    return [...porUsuario.entries()]
+      .map(([idUser, jornada]) => ({
+        idUser,
+        state: jornada.checkOut ? ('done' as const) : ('working' as const),
+        ...jornada,
+      }))
+      .sort((a, b) => a.idUser - b.idUser);
+  }
+
+  async eliminar(id: number): Promise<{ success: true }> {
+    const marca = await this.obtener(id);
+    await this.marcajeRepository.remove(marca);
+    return { success: true };
+  }
 }

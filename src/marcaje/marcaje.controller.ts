@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   Param,
@@ -47,6 +48,12 @@ export class MarcajeController {
   }
 
   @Roles(ROL_ADMIN)
+  @Get('/admin/today')
+  todayStatus() {
+    return this.marcajeService.estadoDeHoyDeTodos();
+  }
+
+  @Roles(ROL_ADMIN)
   @Get('/admin')
   findAll(@Query() { limit, offset }: PageQueryDto) {
     return this.marcajeService.todas(limit, offset);
@@ -56,6 +63,12 @@ export class MarcajeController {
   @Patch('/admin/:id')
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateMarcajeDto) {
     return this.marcajeService.actualizar(id, dto.date);
+  }
+
+  @Roles(ROL_ADMIN)
+  @Delete('/admin/:id')
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.marcajeService.eliminar(id);
   }
 
   @Post('/date/:id')

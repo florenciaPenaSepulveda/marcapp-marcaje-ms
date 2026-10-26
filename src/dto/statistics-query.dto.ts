@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import * as validator from 'class-validator';
+import { FECHA } from './admin-marcaje.dto';
 
 export class StatisticsQueryDto {
   @validator.IsOptional()
@@ -22,4 +23,14 @@ export class PageQueryDto {
   @validator.IsInt()
   @validator.Min(0)
   offset?: number;
+}
+
+export class SummaryQueryDto extends StatisticsQueryDto {
+  @validator.IsOptional()
+  @validator.Matches(FECHA, { message: 'from must use the format DD-MM-YYYY' })
+  from?: string;
+
+  @validator.IsOptional()
+  @validator.Matches(FECHA, { message: 'to must use the format DD-MM-YYYY' })
+  to?: string;
 }
