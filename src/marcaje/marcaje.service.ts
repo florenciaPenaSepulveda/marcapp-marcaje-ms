@@ -27,10 +27,17 @@ export type MarcajeFormateado = ReturnType<MarcajeService['formatear']>;
 const LIMITE_POR_DEFECTO = 200;
 const DIAS_MAXIMOS_POR_CONSULTA = 366;
 export const ESPERA_MINIMA_SEGUNDOS = 30;
+export const TOLERANCIA_DE_RELOJ_MS = 5 * 60 * 1000;
+
+export interface DatosSinConexion {
+  recordedAt?: string;
+  clientId?: string;
+}
 
 @Injectable()
 export class MarcajeService {
   private readonly zona: string;
+  private readonly horasMaximasSinConexion: number;
 
   constructor(
     @InjectRepository(Marcaje) private marcajeRepository: Repository<Marcaje>,
@@ -38,6 +45,9 @@ export class MarcajeService {
     config: ConfigService<Env, true>,
   ) {
     this.zona = config.get('TIMEZONE', { infer: true });
+    this.horasMaximasSinConexion = config.get('OFFLINE_MAX_HOURS', {
+      infer: true,
+    });
   }
 
   formatear(marca: Marcaje) {
@@ -47,21 +57,45 @@ export class MarcajeService {
       date: formatearFechaHora(marca.date, this.zona),
       type: marca.type,
       adminFlag: marca.adminFlag,
+      offline: marca.offline,
       latCoordinate: marca.latCoordinate,
       longCoordinate: marca.longCoordinate,
     };
   }
 
-  registrar(
+  async registrar(
     idUser: number,
     latCoordinate: string,
     longCoordinate: string,
+    { recordedAt, clientId }: DatosSinConexion = {},
   ): Promise<Resultado<MarcajeFormateado>> {
-    return this.crearMarca(idUser, new Date(), {
+    const ahora = Date.now();
+    let fecha = new Date(ahora);
+    if (recordedAt) {
+      fecha = new Date(recordedAt);
+      if (fecha.getTime() > ahora + TOLERANCIA_DE_RELOJ_MS) {
+        return {
+          success: false,
+          message: 'The recorded time cannot be in the future',
+        };
+      }
+      if (ahora - fecha.getTime() > this.horasMaximasSinConexion * 3600000) {
+        return {
+          success: false,
+          message: `The recorded time is older than ${this.horasMaximasSinConexion} hours`,
+        };
+      }
+      if (fecha.getTime() > ahora) {
+        fecha = new Date(ahora);
+      }
+    }
+    return this.crearMarca(idUser, fecha, {
       latCoordinate,
       longCoordinate,
       adminFlag: false,
       esperaMinima: ESPERA_MINIMA_SEGUNDOS,
+      offline: Boolean(recordedAt),
+      clientId: clientId ?? null,
     });
   }
 
@@ -84,19 +118,37 @@ export class MarcajeService {
       longCoordinate: '0',
       adminFlag: true,
       esperaMinima: 0,
+      offline: false,
+      clientId: null,
     });
   }
 
   private crearMarca(
     idUser: number,
     fecha: Date,
-    datos: Pick<Marcaje, 'latCoordinate' | 'longCoordinate' | 'adminFlag'> & {
+    datos: Pick<
+      Marcaje,
+      'latCoordinate' | 'longCoordinate' | 'adminFlag' | 'offline' | 'clientId'
+    > & {
       esperaMinima: number;
     },
   ): Promise<Resultado<MarcajeFormateado>> {
     return this.dataSource.transaction(async (manager) => {
       await manager.query('SELECT pg_advisory_xact_lock($1)', [idUser]);
       const repositorio = manager.getRepository(Marcaje);
+      if (datos.clientId) {
+        const previa = await repositorio.findOne({
+          where: { clientId: datos.clientId },
+        });
+        if (previa) {
+          return previa.id_user === idUser
+            ? ({ success: true, data: this.formatear(previa) } as const)
+            : ({
+                success: false,
+                message: 'Invalid client identifier',
+              } as const);
+        }
+      }
       const { inicio, fin } = rangoDelDia(fecha, this.zona);
       const delDia = await repositorio.find({
         where: { id_user: idUser, date: Between(inicio, fin) },

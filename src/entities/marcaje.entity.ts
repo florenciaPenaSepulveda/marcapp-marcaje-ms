@@ -23,6 +23,13 @@ export class Marcaje {
   @typeOrm.Column({ default: false })
   adminFlag: boolean;
 
+  @typeOrm.Column({ default: false })
+  offline: boolean;
+
+  @typeOrm.Index({ unique: true })
+  @typeOrm.Column({ type: 'uuid', nullable: true })
+  clientId: string | null;
+
   @typeOrm.Column({ type: 'varchar', length: 32, nullable: true })
   latCoordinate: string | null;
 

@@ -38,6 +38,7 @@ export class MarcajeController {
       req.user.id,
       dto.latCoordinate,
       dto.longCoordinate,
+      { recordedAt: dto.recordedAt, clientId: dto.clientId },
     );
   }
 
