@@ -6,6 +6,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { AuthGuard } from './auth.guard';
+import { SessionService } from './session.service';
 import { autorizarAcceso, esAdmin, RolesGuard } from './roles';
 
 const contexto = (request: Record<string, unknown>): ExecutionContext =>
@@ -17,11 +18,18 @@ const contexto = (request: Record<string, unknown>): ExecutionContext =>
 
 describe('AuthGuard', () => {
   let jwt: { verifyAsync: jest.Mock };
+  let sesiones: { validar: jest.Mock };
   let guard: AuthGuard;
 
   beforeEach(() => {
-    jwt = { verifyAsync: jest.fn() };
-    guard = new AuthGuard(jwt as unknown as JwtService);
+    jwt = { verifyAsync: jest.fn().mockResolvedValue({ id: 3, role: 'user' }) };
+    sesiones = {
+      validar: jest.fn().mockResolvedValue({ id: 3, role: 'user' }),
+    };
+    guard = new AuthGuard(
+      jwt as unknown as JwtService,
+      sesiones as unknown as SessionService,
+    );
   });
 
   it.each([[undefined], ['Basic abc'], ['Bearer'], ['Bearer ']])(
@@ -31,22 +39,33 @@ describe('AuthGuard', () => {
         guard.canActivate(contexto({ headers: { authorization: cabecera } })),
       ).rejects.toBeInstanceOf(UnauthorizedException);
       expect(jwt.verifyAsync).not.toHaveBeenCalled();
+      expect(sesiones.validar).not.toHaveBeenCalled();
     },
   );
 
-  it('rechaza un token inválido o vencido', async () => {
+  it('rechaza un token inválido o vencido sin consultar al servicio de usuarios', async () => {
     jwt.verifyAsync.mockRejectedValue(new Error('jwt expired'));
     await expect(
       guard.canActivate(
         contexto({ headers: { authorization: 'Bearer malo' } }),
       ),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(sesiones.validar).not.toHaveBeenCalled();
   });
 
-  it.each([[{}], [{ id: 'uno', role: 'user' }], [{ id: 1 }], [null]])(
-    'rechaza un token firmado con datos incompletos %p',
-    async (payload) => {
-      jwt.verifyAsync.mockResolvedValue(payload);
+  it('propaga el rechazo cuando el servicio de usuarios revoca la sesión', async () => {
+    sesiones.validar.mockRejectedValue(new UnauthorizedException());
+    await expect(
+      guard.canActivate(
+        contexto({ headers: { authorization: 'Bearer revocado' } }),
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it.each([[{}], [{ id: 'uno', role: 'user' }], [{ id: 1 }], [{ role: 'x' }]])(
+    'rechaza una respuesta de sesión con datos incompletos %p',
+    async (respuesta) => {
+      sesiones.validar.mockResolvedValue(respuesta);
       await expect(
         guard.canActivate(
           contexto({ headers: { authorization: 'Bearer firmado' } }),
@@ -55,17 +74,15 @@ describe('AuthGuard', () => {
     },
   );
 
-  it('deja solo el id y el rol en la solicitud', async () => {
-    jwt.verifyAsync.mockResolvedValue({
-      id: 3,
-      role: 'user',
-      email: 'x@test.cl',
-    });
+  it('toma el id y el rol vigentes del servicio de usuarios y no los del token', async () => {
+    jwt.verifyAsync.mockResolvedValue({ id: 3, role: 'admin' });
+    sesiones.validar.mockResolvedValue({ id: 3, role: 'user' });
     const request: Record<string, unknown> = {
       headers: { authorization: 'bearer bueno' },
     };
     await expect(guard.canActivate(contexto(request))).resolves.toBe(true);
     expect(request.user).toEqual({ id: 3, role: 'user' });
+    expect(sesiones.validar).toHaveBeenCalledWith('bueno');
   });
 });
 

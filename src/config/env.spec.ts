@@ -9,6 +9,8 @@ describe('validarEntorno', () => {
       DB_PORT: 5432,
       TIMEZONE: 'America/Santiago',
       NODE_ENV: 'development',
+      USERS_SERVICE_URL: 'http://127.0.0.1:3001',
+      SESSION_CACHE_SECONDS: 15,
     });
   });
 
@@ -21,6 +23,19 @@ describe('validarEntorno', () => {
   it('exige un JWT_SECRET largo', () => {
     expect(() => validarEntorno({ JWT_SECRET: 'corto' })).toThrow(/JWT_SECRET/);
     expect(() => validarEntorno({})).toThrow(/Configuración inválida/);
+  });
+
+  it('valida la URL del servicio de usuarios y la vigencia de la caché', () => {
+    expect(() =>
+      validarEntorno({ ...base, USERS_SERVICE_URL: 'no-es-url' }),
+    ).toThrow(/USERS_SERVICE_URL/);
+    expect(() =>
+      validarEntorno({ ...base, SESSION_CACHE_SECONDS: '301' }),
+    ).toThrow(/SESSION_CACHE_SECONDS/);
+    expect(
+      validarEntorno({ ...base, SESSION_CACHE_SECONDS: '0' })
+        .SESSION_CACHE_SECONDS,
+    ).toBe(0);
   });
 
   it('rechaza una zona horaria desconocida', () => {

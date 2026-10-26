@@ -1,17 +1,65 @@
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET ??= 'secreto-de-pruebas-con-mas-de-32-caracteres';
 process.env.DB_NAME = process.env.DB_NAME_TEST ?? 'marcajedb_test';
+process.env.SESSION_CACHE_SECONDS = '0';
 
+import { createServer, Server } from 'http';
+import { AddressInfo } from 'net';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as jwt from 'jsonwebtoken';
 import * as request from 'supertest';
-import { AppModule } from './../src/app.module';
 import { configurarApp } from './../src/app.setup';
 
 const aleatorio = () => Math.floor(Math.random() * 1_000_000) + 1000;
 const firmar = (id: number, role: string, secreto = process.env.JWT_SECRET) =>
   jwt.sign({ id, role, email: `u${id}@test.cl` }, secreto, { expiresIn: '1h' });
+
+type ModoDeFallo = 'ninguno' | 'error' | 'caido';
+
+const revocados = new Set<string>();
+const rolesVigentes = new Map<number, string>();
+let modoDeFallo: ModoDeFallo = 'ninguno';
+let servicioDeUsuarios: Server;
+
+const iniciarServicioDeUsuarios = () =>
+  new Promise<void>((resolver) => {
+    servicioDeUsuarios = createServer((req, res) => {
+      if (modoDeFallo === 'caido') {
+        req.socket.destroy();
+        return;
+      }
+      if (modoDeFallo === 'error') {
+        res.statusCode = 500;
+        res.end();
+        return;
+      }
+      const token = (req.headers.authorization ?? '').replace(/^Bearer /i, '');
+      try {
+        if (revocados.has(token)) {
+          throw new Error('revocado');
+        }
+        const payload = jwt.verify(token, process.env.JWT_SECRET) as {
+          id: number;
+          role: string;
+        };
+        res.setHeader('content-type', 'application/json');
+        res.end(
+          JSON.stringify({
+            id: payload.id,
+            role: rolesVigentes.get(payload.id) ?? payload.role,
+          }),
+        );
+      } catch {
+        res.statusCode = 401;
+        res.end();
+      }
+    });
+    servicioDeUsuarios.listen(0, '127.0.0.1', () => {
+      process.env.USERS_SERVICE_URL = `http://127.0.0.1:${(servicioDeUsuarios.address() as AddressInfo).port}`;
+      resolver();
+    });
+  });
 
 describe('Marcapp marcaje (e2e)', () => {
   let app: INestApplication;
@@ -28,6 +76,8 @@ describe('Marcapp marcaje (e2e)', () => {
     http().post('/marcaje/admin').set(auth(admin)).send({ idUser, date });
 
   beforeAll(async () => {
+    await iniciarServicioDeUsuarios();
+    const { AppModule } = await import('./../src/app.module');
     const modulo = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -38,6 +88,7 @@ describe('Marcapp marcaje (e2e)', () => {
 
   afterAll(async () => {
     await app.close();
+    await new Promise((resolver) => servicioDeUsuarios.close(resolver));
   });
 
   describe('acceso', () => {
@@ -411,6 +462,51 @@ describe('Marcapp marcaje (e2e)', () => {
     });
   });
 
+  describe('validación de la sesión con el servicio de usuarios', () => {
+    it('rechaza un token revocado aunque la firma y la vigencia sean correctas', async () => {
+      const revocada = { id: aleatorio(), role: 'user' };
+      const token = firmar(revocada.id, revocada.role);
+      const cabecera = { Authorization: `Bearer ${token}` };
+      await http()
+        .get(`/marcaje/user/${revocada.id}`)
+        .set(cabecera)
+        .expect(200);
+      revocados.add(token);
+      await http()
+        .get(`/marcaje/user/${revocada.id}`)
+        .set(cabecera)
+        .expect(401);
+      await http().get('/statistics/daily').set(cabecera).expect(401);
+      await http().post('/marcaje').set(cabecera).send(ubicacion).expect(401);
+    });
+
+    it('usa el rol vigente del servicio de usuarios y no el que trae el token', async () => {
+      const degradado = { id: aleatorio(), role: 'admin' };
+      rolesVigentes.set(degradado.id, 'user');
+      await http().get('/marcaje/admin').set(auth(degradado)).expect(403);
+
+      const ascendido = { id: aleatorio(), role: 'user' };
+      rolesVigentes.set(ascendido.id, 'admin');
+      await http().get('/marcaje/admin').set(auth(ascendido)).expect(200);
+    });
+
+    it.each(['error', 'caido'] as ModoDeFallo[])(
+      'responde 503 cuando el servicio de usuarios falla (%s)',
+      async (modo) => {
+        modoDeFallo = modo;
+        try {
+          await http()
+            .get(`/marcaje/user/${ana.id}`)
+            .set(auth(ana))
+            .expect(503);
+        } finally {
+          modoDeFallo = 'ninguno';
+        }
+        await http().get(`/marcaje/user/${ana.id}`).set(auth(ana)).expect(200);
+      },
+    );
+  });
+
   describe('estado de hoy de todos los trabajadores', () => {
     it('exige rol de administrador', async () => {
       await http().get('/marcaje/admin/today').expect(401);
@@ -563,6 +659,53 @@ describe('Marcapp marcaje (e2e)', () => {
         .delete(`/marcaje/admin/${idMarca}`)
         .set(auth(admin))
         .expect(404);
+    });
+  });
+
+  describe('eliminación de todos los marcajes de un usuario', () => {
+    const exTrabajador = { id: aleatorio(), role: 'user' };
+
+    beforeAll(async () => {
+      await crear(exTrabajador.id, '06-03-2024 09:00:00');
+      await crear(exTrabajador.id, '06-03-2024 17:00:00');
+    });
+
+    it('exige rol de administrador y un identificador válido', async () => {
+      await http().delete(`/marcaje/admin/user/${exTrabajador.id}`).expect(401);
+      await http()
+        .delete(`/marcaje/admin/user/${exTrabajador.id}`)
+        .set(auth(exTrabajador))
+        .expect(403);
+      await http()
+        .delete('/marcaje/admin/user/abc')
+        .set(auth(admin))
+        .expect(400);
+    });
+
+    it('elimina los marcajes del usuario y deja los de otros', async () => {
+      const antes = await http()
+        .get(`/marcaje/user/${exTrabajador.id}`)
+        .set(auth(admin))
+        .expect(200);
+      expect(antes.body).toHaveLength(2);
+      await http()
+        .delete(`/marcaje/admin/user/${exTrabajador.id}`)
+        .set(auth(admin))
+        .expect(200, { success: true, deleted: 2 });
+      const despues = await http()
+        .get(`/marcaje/user/${exTrabajador.id}`)
+        .set(auth(admin))
+        .expect(200);
+      expect(despues.body).toEqual([]);
+      await http()
+        .delete(`/marcaje/admin/user/${exTrabajador.id}`)
+        .set(auth(admin))
+        .expect(200, { success: true, deleted: 0 });
+      const deAna = await http()
+        .get(`/marcaje/user/${ana.id}`)
+        .set(auth(admin))
+        .expect(200);
+      expect(deAna.body.length).toBeGreaterThan(0);
     });
   });
 
