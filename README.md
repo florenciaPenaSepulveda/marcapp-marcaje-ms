@@ -4,6 +4,16 @@
 
 Microservicio de **marcajes de entrada y salida** y de estadísticas de horas trabajadas de **Marcapp**, una aplicación de control de asistencia con ubicación para empresas. Valida los tokens JWT que emite el servicio de usuarios.
 
+## Inicio rápido
+
+```
+cp .env.example .env     # completa DB_PASSWORD y JWT_SECRET (el mismo que login-ms)
+npm ci && npm run migration:run
+npm run start:dev
+```
+
+Necesitas Node.js 24 y PostgreSQL 16. Pruebas: 122 con 99 % de cobertura (`npm run test:cov`).
+
 ## Repositorios del proyecto
 
 | Repositorio | Descripción |
